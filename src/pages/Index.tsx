@@ -60,6 +60,8 @@ const Index = () => {
   const [goals, setGoals] = useState<FinancialGoal[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isGoalDialogOpen, setIsGoalDialogOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editingGoal, setEditingGoal] = useState<FinancialGoal | null>(null);
   
   const [newTransaction, setNewTransaction] = useState({
     type: "expense" as TransactionType,
@@ -170,6 +172,60 @@ const Index = () => {
     });
   };
 
+  const startEditingTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setNewTransaction({
+      type: transaction.type,
+      category: transaction.category,
+      amount: transaction.amount.toString(),
+      date: transaction.date,
+      description: transaction.description
+    });
+    setIsAddDialogOpen(true);
+  };
+
+  const updateTransaction = () => {
+    if (!editingTransaction || !newTransaction.category || !newTransaction.amount) {
+      toast({
+        title: "Ошибка",
+        description: "Заполните все обязательные поля",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const updatedTransactions = transactions.map(t => 
+      t.id === editingTransaction.id 
+        ? {
+            ...t,
+            type: newTransaction.type,
+            category: newTransaction.category,
+            amount: parseFloat(newTransaction.amount),
+            date: newTransaction.date,
+            description: newTransaction.description
+          }
+        : t
+    );
+
+    setTransactions(updatedTransactions);
+    localStorage.setItem("transactions", JSON.stringify(updatedTransactions));
+
+    setNewTransaction({
+      type: "expense",
+      category: "",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+      description: ""
+    });
+    setEditingTransaction(null);
+    setIsAddDialogOpen(false);
+
+    toast({
+      title: "Обновлено!",
+      description: "Транзакция успешно изменена"
+    });
+  };
+
   const addGoal = () => {
     if (!newGoal.name || !newGoal.targetAmount) {
       toast({
@@ -214,6 +270,76 @@ const Index = () => {
     toast({
       title: "Отлично!",
       description: `Добавлено ${amount}₽ к цели`
+    });
+  };
+
+  const withdrawFromGoal = (goalId: string, amount: number) => {
+    const updatedGoals = goals.map(goal => {
+      if (goal.id === goalId) {
+        return { ...goal, currentAmount: Math.max(goal.currentAmount - amount, 0) };
+      }
+      return goal;
+    });
+    setGoals(updatedGoals);
+    localStorage.setItem("goals", JSON.stringify(updatedGoals));
+
+    toast({
+      title: "Снято!",
+      description: `Снято ${amount}₽ с цели`
+    });
+  };
+
+  const startEditingGoal = (goal: FinancialGoal) => {
+    setEditingGoal(goal);
+    setNewGoal({
+      name: goal.name,
+      targetAmount: goal.targetAmount.toString(),
+      deadline: goal.deadline || ""
+    });
+    setIsGoalDialogOpen(true);
+  };
+
+  const updateGoal = () => {
+    if (!editingGoal || !newGoal.name || !newGoal.targetAmount) {
+      toast({
+        title: "Ошибка",
+        description: "Заполните название и целевую сумму",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const updatedGoals = goals.map(g =>
+      g.id === editingGoal.id
+        ? {
+            ...g,
+            name: newGoal.name,
+            targetAmount: parseFloat(newGoal.targetAmount),
+            deadline: newGoal.deadline || undefined
+          }
+        : g
+    );
+
+    setGoals(updatedGoals);
+    localStorage.setItem("goals", JSON.stringify(updatedGoals));
+
+    setNewGoal({ name: "", targetAmount: "", deadline: "" });
+    setEditingGoal(null);
+    setIsGoalDialogOpen(false);
+
+    toast({
+      title: "Обновлено!",
+      description: "Цель успешно изменена"
+    });
+  };
+
+  const deleteGoal = (goalId: string) => {
+    const updatedGoals = goals.filter(g => g.id !== goalId);
+    setGoals(updatedGoals);
+    localStorage.setItem("goals", JSON.stringify(updatedGoals));
+    toast({
+      title: "Удалено",
+      description: "Цель успешно удалена"
     });
   };
 
@@ -267,7 +393,19 @@ const Index = () => {
               <Icon name="Moon" size={18} className="text-muted-foreground" />
             </div>
             
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <Dialog open={isAddDialogOpen} onOpenChange={(open) => {
+              setIsAddDialogOpen(open);
+              if (!open) {
+                setEditingTransaction(null);
+                setNewTransaction({
+                  type: "expense",
+                  category: "",
+                  amount: "",
+                  date: new Date().toISOString().split("T")[0],
+                  description: ""
+                });
+              }
+            }}>
               <DialogTrigger asChild>
                 <Button className="gap-2">
                   <Icon name="Plus" size={18} />
@@ -276,8 +414,8 @@ const Index = () => {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Новая транзакция</DialogTitle>
-                  <DialogDescription>Добавьте доход или расход</DialogDescription>
+                  <DialogTitle>{editingTransaction ? "Редактировать транзакцию" : "Новая транзакция"}</DialogTitle>
+                  <DialogDescription>{editingTransaction ? "Измените данные транзакции" : "Добавьте доход или расход"}</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
@@ -343,8 +481,8 @@ const Index = () => {
                     />
                   </div>
                 </div>
-                <Button onClick={addTransaction} className="w-full">
-                  Добавить
+                <Button onClick={editingTransaction ? updateTransaction : addTransaction} className="w-full">
+                  {editingTransaction ? "Сохранить" : "Добавить"}
                 </Button>
               </DialogContent>
             </Dialog>
@@ -497,7 +635,8 @@ const Index = () => {
                       .map(transaction => (
                         <div 
                           key={transaction.id} 
-                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                          className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors cursor-pointer"
+                          onClick={() => startEditingTransaction(transaction)}
                         >
                           <div className="flex items-center gap-4">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
@@ -527,7 +666,10 @@ const Index = () => {
                             <Button 
                               variant="ghost" 
                               size="icon"
-                              onClick={() => deleteTransaction(transaction.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTransaction(transaction.id);
+                              }}
                             >
                               <Icon name="Trash2" size={16} />
                             </Button>
@@ -622,22 +764,34 @@ const Index = () => {
                 const remaining = goal.targetAmount - goal.currentAmount;
                 
                 return (
-                  <Card key={goal.id}>
+                  <Card key={goal.id} className="cursor-pointer hover:shadow-lg transition-shadow" onClick={() => startEditingGoal(goal)}>
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
                         <span className="flex items-center gap-2">
                           <Icon name="Target" size={20} className="text-primary" />
                           {goal.name}
                         </span>
-                        <Badge variant={progress === 100 ? "default" : "secondary"}>
-                          {progress.toFixed(0)}%
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={progress === 100 ? "default" : "secondary"}>
+                            {progress.toFixed(0)}%
+                          </Badge>
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteGoal(goal.id);
+                            }}
+                          >
+                            <Icon name="Trash2" size={16} />
+                          </Button>
+                        </div>
                       </CardTitle>
                       <CardDescription>
                         Цель: {goal.targetAmount.toLocaleString('ru-RU')} ₽
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <CardContent className="space-y-4" onClick={(e) => e.stopPropagation()}>
                       <div>
                         <div className="flex justify-between text-sm mb-2">
                           <span className="text-muted-foreground">Накоплено</span>
@@ -651,33 +805,71 @@ const Index = () => {
                         </p>
                       </div>
                       
-                      {progress < 100 && (
+                      <div className="space-y-2">
                         <div className="flex gap-2">
                           <Button 
                             size="sm" 
                             variant="outline"
                             onClick={() => contributeToGoal(goal.id, 1000)}
                             className="flex-1"
+                            disabled={progress >= 100}
                           >
-                            +1000₽
+                            <Icon name="Plus" size={14} className="mr-1" />
+                            1000₽
                           </Button>
                           <Button 
                             size="sm" 
                             variant="outline"
                             onClick={() => contributeToGoal(goal.id, 5000)}
                             className="flex-1"
+                            disabled={progress >= 100}
                           >
-                            +5000₽
+                            <Icon name="Plus" size={14} className="mr-1" />
+                            5000₽
                           </Button>
                           <Button 
                             size="sm"
                             onClick={() => contributeToGoal(goal.id, 10000)}
                             className="flex-1"
+                            disabled={progress >= 100}
                           >
-                            +10000₽
+                            <Icon name="Plus" size={14} className="mr-1" />
+                            10000₽
                           </Button>
                         </div>
-                      )}
+                        
+                        {goal.currentAmount > 0 && (
+                          <div className="flex gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => withdrawFromGoal(goal.id, 1000)}
+                              className="flex-1"
+                            >
+                              <Icon name="Minus" size={14} className="mr-1" />
+                              1000₽
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => withdrawFromGoal(goal.id, 5000)}
+                              className="flex-1"
+                            >
+                              <Icon name="Minus" size={14} className="mr-1" />
+                              5000₽
+                            </Button>
+                            <Button 
+                              size="sm"
+                              variant="outline"
+                              onClick={() => withdrawFromGoal(goal.id, 10000)}
+                              className="flex-1"
+                            >
+                              <Icon name="Minus" size={14} className="mr-1" />
+                              10000₽
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 );
@@ -685,7 +877,13 @@ const Index = () => {
 
               <Card className="border-dashed">
                 <CardContent className="flex flex-col items-center justify-center min-h-[200px]">
-                  <Dialog open={isGoalDialogOpen} onOpenChange={setIsGoalDialogOpen}>
+                  <Dialog open={isGoalDialogOpen} onOpenChange={(open) => {
+                    setIsGoalDialogOpen(open);
+                    if (!open) {
+                      setEditingGoal(null);
+                      setNewGoal({ name: "", targetAmount: "", deadline: "" });
+                    }
+                  }}>
                     <DialogTrigger asChild>
                       <Button variant="outline" className="gap-2">
                         <Icon name="Plus" size={18} />
@@ -694,9 +892,9 @@ const Index = () => {
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Новая финансовая цель</DialogTitle>
+                        <DialogTitle>{editingGoal ? "Редактировать цель" : "Новая финансовая цель"}</DialogTitle>
                         <DialogDescription>
-                          Поставьте цель и следите за прогрессом
+                          {editingGoal ? "Измените параметры цели" : "Поставьте цель и следите за прогрессом"}
                         </DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
@@ -728,8 +926,8 @@ const Index = () => {
                           />
                         </div>
                       </div>
-                      <Button onClick={addGoal} className="w-full">
-                        Создать цель
+                      <Button onClick={editingGoal ? updateGoal : addGoal} className="w-full">
+                        {editingGoal ? "Сохранить" : "Создать цель"}
                       </Button>
                     </DialogContent>
                   </Dialog>
